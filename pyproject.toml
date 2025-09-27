@@ -10,6 +10,7 @@ dependencies = [
     "jupyterlab",
     "numpy",
     "pandas",
-    "matplotlib"
+    "matplotlib",
+    "scikit-learn"
 ]
 
