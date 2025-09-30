@@ -1,0 +1,230 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+
+# Функція для отримання значень від користувача
+def read_user_input():
+    folder = ''
+    arma_all = True  # завжди використовуємо всі можливі коефіцієнти
+    arma = [3, 3]
+
+    while True:
+        if folder == '':
+            folder = str(input("Введіть назву папки з файлами 'test', 'v' і 'y' (ця папка має бути в тій же директорії, що й цей файл)\n    або введіть 'auto' для автоматично згенерованих даних: "))
+
+        if str(folder).lower() == 'auto':
+            # Використовуємо фіксовані коефіцієнти
+            coeffs = [0, 0.22, -0.18, 0.08, 0.5, 0.25, 0.25]
+        elif folder not in os.listdir():
+            print("[ПОМИЛКА]: Такої директорії не існує!")
+            folder = ''
+            continue
+
+        break
+
+    return folder, arma, coeffs, arma_all
+
+# Функція для читання файлів
+def read_file(directory:str):
+    files = os.listdir(directory)
+    try:
+        for i, file in enumerate(files):
+            with open(f'{directory}/{file}', 'r+') as values:
+                lines = values.read().splitlines()
+                if i == 0:
+                    teta = dict([(str(line.split('=')[0]), float(line.split('=')[1])) for line in lines])
+                elif i == 1:
+                    v = [float(line) for line in lines]
+                else:
+                    y = [float(line) for line in lines]
+    except FileNotFoundError:
+        print('Немає такого файлу чи директорії')
+        return read_file(directory)
+    except Exception as er:
+        print(f'Виникла помилка {er}')
+
+    return teta, v, y
+
+# Функція, що генерує білий шум
+def gen_noise(num_samples=100, mean=0, std=1):
+    white_noise = np.random.normal(mean, std, num_samples)
+    return white_noise
+
+# КОЕФІЦІЄНТ БЕТА
+BETTA = 2
+
+# S - сума квадратів похибок
+def S(y_true, y_pred):
+    e_squared = (np.array(y_true) - np.array(y_pred))**2
+    return e_squared.sum()
+
+# R^2 - коефіцієнт детермінації
+def R_squared(y_true, y_pred):
+    var_pred = np.array(y_pred).var()
+    var_true = np.array(y_true).var()
+    return var_pred / var_true
+
+# Критерій Акаіке
+def IKA(y_true, y_pred, n):
+    epsilon = 1e-10
+    return len(y_true) * np.log(S(y_true, y_pred) + epsilon) + 2*n
+
+# Генерація ARMA
+def arma(p, q, coeffs:dict, t:int, e:list or tuple):
+    y = np.random.rand(t)
+    start_point = max([p, q])
+
+    for i in range(start_point, t):
+        y[i] = coeffs['a0'] + coeffs['b0']*e[i]
+        for j in range(1, p + 1):
+            y[i] += coeffs['a' + str(j)]*y[i - j]
+        for j in range(1, q + 1):
+            y[i] += coeffs['b' + str(j)]*e[i - j]
+    return y
+
+# МНК
+def mnk(y, X):
+    res = np.array([])
+    y = np.array(y)
+    try:
+        res = (np.linalg.inv(X.T@X)) @ X.T @ y[int(y.shape[0] - X.shape[0]):]
+    except np.linalg.LinAlgError:
+        print('Матриця Х виявилась виродженою')
+    except Exception as er:
+        print(er)
+        print(X.shape, y.shape)
+    finally:
+        return res
+
+# Генерація матриці X
+def get_x(y, v, p, q, obs):
+    start_point = max([p, q])
+    X = [[1 for _ in range(obs - start_point)]]
+    for i in range(1, p + 1):
+        X.append(y[start_point - i:obs - i])
+    X.append(v[start_point:obs])
+    for i in range(1, q + 1):
+        X.append(v[start_point - i:obs - i])
+    return np.array(X).T
+
+# РМНК
+def rmnk(y, X, beta):
+    x_row, x_col = X.shape[0], X.shape[1]
+    p0 = np.identity(x_col) * beta
+    coeffs = np.matrix(np.zeros(x_col)).T
+    for i in range(x_row):
+        row = np.matrix(X[i])
+        p1 = p0 - (p0 @ row.T @ row @ p0) / (1 + (row @ p0 @ row.T).tolist()[0][0])
+        coeffs = coeffs + p1 @ row.T * (y[i] - (row @ coeffs).tolist()[0][0])
+        p0 = p1
+    return np.squeeze(np.asarray(coeffs))
+
+# Підрахунок метрик
+def count_metrics(y_true, y_pred_mnk, y_pred_rmnk, p, q):
+    start_point = max([p, q])
+    n = p + q + 1
+    result = []
+
+    for y_pred in [y_pred_mnk, y_pred_rmnk]:
+        result.append(S(y_true[start_point:], y_pred))
+        result.append(R_squared(y_true[start_point:], y_pred))
+        result.append(IKA(y_true[start_point:], y_pred, n))
+
+    return result
+
+# Побудова графіків
+def plot_all_we_need_to_plot(p, q, teta, obs, y, v, arma_all=False, result_metrics=None, labels=None):
+    best_params = []
+    for i in range(p + 1):
+        best_params.append(teta['a' + str(i)])
+    for i in range(q + 1):
+        best_params.append(teta['b' + str(i)])
+
+    m = len(best_params)
+    n = obs - 10
+
+    mnk_params = []
+    rmnk_params = []
+
+    for k in range(10, obs):
+        X = get_x(y[:k], v[:k], p, q, k)
+        mnk_params.append(mnk(y[:k], X))
+        rmnk_params.append(rmnk(y[:k], X, BETTA))
+
+    mnk_params = np.array(mnk_params)
+    rmnk_params = np.array(rmnk_params)
+
+    param_titles = ['a' + str(i) for i in range(p + 1)] + ['b' + str(i) for i in range(q + 1)]
+
+    fig, axs = plt.subplots(3, 3, figsize=(15, 15))
+    for i in range(m):
+        axs[int(i / 3), i % 3].plot(range(n), mnk_params[:, i], label='МНК', color='red')
+        axs[int(i / 3), i % 3].plot(range(n), rmnk_params[:, i], label='РМНК', color='green')
+        axs[int(i / 3), i % 3].set_title(param_titles[i])
+        axs[int(i / 3), i % 3].set_xlabel('k')
+        axs[int(i / 3), i % 3].plot(range(n), np.ones(n) * best_params[i], label='Еталонні значення', color='black', linestyle='--')
+        axs[int(i / 3), i % 3].legend()
+    plt.show()
+
+    if arma_all:
+        metrics = np.array(result_metrics)
+        titles = ['S', 'R^2', 'IKA']
+        fig, axs = plt.subplots(1, 3, figsize=(15, 5))
+        for i in range(3):
+            axs[i].plot(labels, metrics[:, i], label='МНК', color='red')
+            axs[i].plot(labels, metrics[:, i + 3], label='РМНК', color='green')
+            axs[i].set_title(titles[i])
+            for tick in axs[i].get_xticklabels():
+                tick.set_rotation(30)
+            axs[i].legend()
+        plt.show()
+
+# Головна функція
+def main():
+    folder, (p, q), coeffs, arma_all = read_user_input()
+
+    if folder == 'auto':
+        teta = dict(zip(['a' + str(i) for i in range(p + 1)] + ['b' + str(i) for i in range(1, q + 1)], coeffs))
+        teta['b0'] = 1
+        obs = 100
+        v = gen_noise(obs)
+        y = arma(p, q, teta, obs, v)
+    else:
+        current_directory = os.path.dirname(os.path.abspath(__file__))
+        teta, v, y = read_file(current_directory + '/' + folder)
+        teta['b0'] = 1
+        obs = min([len(v), len(y)])
+
+    labels = []
+    if arma_all:
+        result_metrics = []
+        for i in range(1, p + 1):
+            for j in range(1, q + 1):
+                X = get_x(y, v, i, j, obs)
+                mnk_output = mnk(y, X)
+                rmnk_output = rmnk(y, X, BETTA)
+                mnk_pred = X @ np.array(mnk_output).reshape(-1, 1)
+                rmnk_pred = X @ np.array(rmnk_output).reshape(-1, 1)
+                result_metrics.append(count_metrics(y, mnk_pred, rmnk_pred, i, j))
+                labels.append(f'АРКС({i}, {j})')
+        df = pd.DataFrame(dict(zip(labels, result_metrics)))
+    else:
+        X = get_x(y, v, p, q, obs)
+        mnk_output = mnk(y, X)
+        rmnk_output = rmnk(y, X, BETTA)
+        mnk_pred = X @ np.array(mnk_output).reshape(-1, 1)
+        rmnk_pred = X @ np.array(rmnk_output).reshape(-1, 1)
+        result_metrics = count_metrics(y, mnk_pred, rmnk_pred, p, q)
+        df = pd.DataFrame({f"АРКС({p}, {q})": result_metrics})
+
+    df['Метод'] = ['МНК', 'МНК', 'МНК', 'РМНК', 'РМНК', 'РМНК']
+    df['Метрика'] = ['S', 'R2', 'IKA', 'S', 'R2', 'IKA']
+    df.set_index(['Метод', 'Метрика'], inplace=True)
+    pd.options.display.float_format = '{:.3f}'.format
+    print(df.transpose())
+
+    plot_all_we_need_to_plot(p, q, teta, obs, y, v, arma_all=arma_all, result_metrics=result_metrics, labels=labels)
+
+if __name__ == '__main__':
+    main()
