@@ -186,7 +186,7 @@ def main():
         y = arma(p, q, teta, obs, v)
     elif folder == 'file':
         current_directory = os.path.dirname(os.path.abspath(__file__))
-        v, y = read_file(os.path.join(current_directory, DATA_FOLDER))
+        y, v = read_file(os.path.join(current_directory, DATA_FOLDER))
         obs = min([len(v), len(y)])
     else:
         raise ValueError("MODE має бути 'auto' або 'file'")
