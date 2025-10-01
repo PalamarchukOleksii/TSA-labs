@@ -13,7 +13,7 @@ true_params = {
     'b3': 0.25
 }
 
-def load_data(filename):
+def load_file(filename):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     filepath = os.path.join(script_dir, filename)
     if not os.path.exists(filepath):
@@ -75,16 +75,14 @@ def compute_metrics(y, v, theta, p, q):
     AIC = n_obs * np.log(SSE/n_obs) + 2*num_params
     return SSE, R2, AIC
 
-def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    result_dir = os.path.join(script_dir, 'results')
-    os.makedirs(result_dir, exist_ok=True)
-
+def load_data():
     print("Завантаження даних...")
     try:
-        y = load_data('data/y.txt')
-        v = load_data('data/v.txt')
+        y = load_file('data/y.txt')
+        v = load_file('data/v.txt')
         print(f"Завантажено {len(y)} спостережень")
+
+        return y, v
     except FileNotFoundError:
         print("Файли y.txt або v.txt не знайдено! Генеруємо тестові дані...")
         n = 100
@@ -101,20 +99,21 @@ def main():
             if k >= 1: y[k] += true_params['a1'] * y[k-1]
             if k >= 2: y[k] += true_params['a2'] * y[k-2]
             if k >= 3: y[k] += true_params['a3'] * y[k-3]
-        np.savetxt(os.path.join(script_dir, 'data/y.txt'), y)
-        np.savetxt(os.path.join(script_dir, 'data/v.txt'), v)
-        print("Тестові дані збережено у data/y.txt та data/v.txt")
 
-    print("\nСправжні параметри моделі (Команда 1):")
-    for key, val in true_params.items():
-        print(f"{key} = {val}")
+        return y, v
+
+def main():
+    y, v = load_data()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    result_dir = os.path.join(script_dir, 'results')
+    os.makedirs(result_dir, exist_ok=True)
+    print(f"\nОцінювання моделей...")
 
     results = []
     for p in range(1,4):
         for q in range(1,4):
             model_name = f"АРКС({p},{q})"
-            print(f"\nОцінювання {model_name}...")
-
             theta_ls = least_squares(y, v, p, q)
             sse_ls, r2_ls, aic_ls = compute_metrics(y, v, theta_ls, p, q)
 
