@@ -151,7 +151,7 @@ def main():
     fig, axes = plt.subplots(3,3,figsize=(15,12))
     fig.suptitle('Збіжність параметрів РМНК для різних моделей', fontsize=16)
     for idx, result in enumerate(results):
-        ax = axes[idx//3, idx%3]
+        ax = axes[idx // 3, idx % 3]
         history = result['theta_history']
         for i in range(history.shape[1]):
             ax.plot(history[:,i], label=f'θ{i}', alpha=0.7)
