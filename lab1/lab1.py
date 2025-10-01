@@ -3,7 +3,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Справжні параметри для команди №1
 true_params = {
     'a0': 0,
     'a1': 0.22,
@@ -15,10 +14,6 @@ true_params = {
 }
 
 def load_data(filename):
-    """
-    Завантаження даних з текстового файлу.
-    Шлях будується відносно місця знаходження цього скрипта.
-    """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     filepath = os.path.join(script_dir, filename)
     if not os.path.exists(filepath):
@@ -31,7 +26,7 @@ def least_squares(y, v, p, q):
     X = []
     Y = []
     for k in range(max_lag, n):
-        row = [1]  # a0
+        row = [1]
         row += [y[k-i] for i in range(1, p+1)]
         row += [v[k-i] for i in range(1, q+1)]
         X.append(row)
@@ -81,12 +76,10 @@ def compute_metrics(y, v, theta, p, q):
     return SSE, R2, AIC
 
 def main():
-    # Папка для збереження результатів
     script_dir = os.path.dirname(os.path.abspath(__file__))
     result_dir = os.path.join(script_dir, 'results')
     os.makedirs(result_dir, exist_ok=True)
 
-    # Завантаження даних
     print("Завантаження даних...")
     try:
         y = load_data('data/y.txt')
@@ -112,12 +105,10 @@ def main():
         np.savetxt(os.path.join(script_dir, 'data/v.txt'), v)
         print("Тестові дані збережено у data/y.txt та data/v.txt")
 
-    # Вивід справжніх параметрів
     print("\nСправжні параметри моделі (Команда 1):")
     for key, val in true_params.items():
         print(f"{key} = {val}")
 
-    # Оцінювання моделей
     results = []
     for p in range(1,4):
         for q in range(1,4):
@@ -157,7 +148,6 @@ def main():
     print(f"МНК: {best_ls['Модель']} (AIC={best_ls['МНК_AIC']:.2f})")
     print(f"РМНК: {best_rls['Модель']} (AIC={best_rls['РМНК_AIC']:.2f})")
 
-    # Побудова графіків збіжності параметрів РМНК
     fig, axes = plt.subplots(3,3,figsize=(15,12))
     fig.suptitle('Збіжність параметрів РМНК для різних моделей', fontsize=16)
     for idx, result in enumerate(results):
@@ -174,7 +164,6 @@ def main():
     plt.savefig(os.path.join(result_dir,'convergence_plots.png'), dpi=150)
     print(f"Збережено: {os.path.join(result_dir,'convergence_plots.png')}")
 
-    # Графіки порівняння метрик
     fig, axes = plt.subplots(1,3,figsize=(15,5))
     models = df['Модель'].values
     x = np.arange(len(models))
@@ -208,7 +197,6 @@ def main():
     plt.savefig(os.path.join(result_dir,'metrics_comparison.png'), dpi=150)
     print(f"Збережено: {os.path.join(result_dir,'metrics_comparison.png')}")
 
-    # Збереження результатів у CSV
     df[['Модель','МНК_SSE','МНК_R2','МНК_AIC','РМНК_SSE','РМНК_R2','РМНК_AIC']].to_csv(os.path.join(result_dir,'results.csv'), index=False)
     print(f"Збережено: {os.path.join(result_dir,'results.csv')}")
 
