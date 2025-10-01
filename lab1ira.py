@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 import os
 
 # ================== ПАРАМЕТРИ ==================
+MODE = "auto"         # "auto" = генерувати дані, "file" = читати з файлу
+DATA_FOLDER = "data"  # папка для файлів, якщо MODE = "file"
+
 P, Q = 3, 3           # порядок ARMA
 OBS = 100             # кількість спостережень
 ARMA_ALL = True       # рахувати всі моделі (True/False)
@@ -16,7 +19,7 @@ COEFFS = [0, 0.22, -0.18, 0.08, 0.5, 0.25, 0.25]
 
 # Функція для отримання значень (без вводу від користувача)
 def read_user_input():
-    folder = 'auto'
+    folder = MODE
     arma_all = ARMA_ALL
     arma = [P, Q]
     coeffs = COEFFS
@@ -156,10 +159,10 @@ def plot_all_we_need_to_plot(p, q, teta, obs, y, v, arma_all=False, result_metri
     fig, axs = plt.subplots(3, 3, figsize=(15, 15))
     for i in range(m):
         axs[int(i / 3), i % 3].plot(range(n), mnk_params[:, i], label='МНК', color='red')
-        axs[int(i / 3), i % 3].plot(range(n), rmnk_params[:, i], label='РМНК', color='green')
+        axs[int(i / 3), i % 3].plot(range(n), rmnk_params[:, i], label='РМНК', color='blue')
+        axs[int(i / 3), i % 3].plot(range(n), np.ones(n) * best_params[i], label='Еталонні значення', color='green', linestyle='--')
         axs[int(i / 3), i % 3].set_title(param_titles[i])
         axs[int(i / 3), i % 3].set_xlabel('k')
-        axs[int(i / 3), i % 3].plot(range(n), np.ones(n) * best_params[i], label='Еталонні значення', color='black', linestyle='--')
         axs[int(i / 3), i % 3].legend()
     plt.tight_layout()
     plt.savefig("params_plot.png")
@@ -170,8 +173,8 @@ def plot_all_we_need_to_plot(p, q, teta, obs, y, v, arma_all=False, result_metri
         titles = ['S', 'R^2', 'IKA']
         fig, axs = plt.subplots(1, 3, figsize=(15, 5))
         for i in range(3):
-            axs[i].plot(labels, metrics[:, i], label='МНК', color='red')
-            axs[i].plot(labels, metrics[:, i + 3], label='РМНК', color='green')
+            axs[i].plot(labels, metrics[:, i], label='МНК', color='blue', marker='o')
+            axs[i].plot(labels, metrics[:, i + 3], label='РМНК', color='yellow', marker='o')
             axs[i].set_title(titles[i])
             for tick in axs[i].get_xticklabels():
                 tick.set_rotation(30)
@@ -189,10 +192,12 @@ def main():
         obs = OBS
         v = gen_noise(obs)
         y = arma(p, q, teta, obs, v)
-    else:
+    elif folder == 'file':
         current_directory = os.path.dirname(os.path.abspath(__file__))
-        teta, v, y = read_file(current_directory + '/' + folder)
+        teta, v, y = read_file(os.path.join(current_directory, DATA_FOLDER))
         obs = min([len(v), len(y)])
+    else:
+        raise ValueError("MODE має бути 'auto' або 'file'")
 
     labels = []
     if arma_all:
