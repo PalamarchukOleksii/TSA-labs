@@ -4,11 +4,11 @@ import matplotlib.pyplot as plt
 import os
 
 # ================== ПАРАМЕТРИ ==================
-MODE = "auto"         # "auto" = генерувати дані, "file" = читати з файлу
+MODE = "file"         # "auto" = генерувати дані, "file" = читати з файлу
 DATA_FOLDER = "data"  # папка для файлів, якщо MODE = "file"
 
 P, Q = 3, 3           # порядок ARMA
-OBS = 100             # кількість спостережень
+OBS = 500             # кількість спостережень
 ARMA_ALL = True       # рахувати всі моделі (True/False)
 
 # Фіксовані коефіцієнти
@@ -26,25 +26,17 @@ def read_user_input():
     return folder, arma, coeffs, arma_all
 
 # Функція для читання файлів
-def read_file(directory:str):
-    files = os.listdir(directory)
-    try:
-        for i, file in enumerate(files):
-            with open(f'{directory}/{file}', 'r+') as values:
-                lines = values.read().splitlines()
-                if i == 0:
-                    teta = dict([(str(line.split('=')[0]), float(line.split('=')[1])) for line in lines])
-                elif i == 1:
-                    v = [float(line) for line in lines]
-                else:
-                    y = [float(line) for line in lines]
-    except FileNotFoundError:
-        print('Немає такого файлу чи директорії')
-        return read_file(directory)
-    except Exception as er:
-        print(f'Виникла помилка {er}')
-
-    return teta, v, y
+def read_file(data_dir = "data"):
+    y_file = os.path.join(data_dir, 'y.txt')
+    v_file = os.path.join(data_dir, 'v.txt')
+    
+    if not os.path.exists(y_file) or not os.path.exists(v_file):
+        raise FileNotFoundError(f"Required files not found: {y_file}, {v_file}")
+    
+    y = np.loadtxt(y_file)
+    v = np.loadtxt(v_file)
+    
+    return y, v
 
 # Функція, що генерує білий шум
 def gen_noise(num_samples=100, mean=0, std=1):
@@ -186,15 +178,15 @@ def plot_all_we_need_to_plot(p, q, teta, obs, y, v, arma_all=False, result_metri
 # Головна функція
 def main():
     folder, (p, q), coeffs, arma_all = read_user_input()
+    teta = dict(zip(['a' + str(i) for i in range(p + 1)] + ['b' + str(i) for i in range(1, q + 1)], coeffs))
 
     if folder == 'auto':
-        teta = dict(zip(['a' + str(i) for i in range(p + 1)] + ['b' + str(i) for i in range(1, q + 1)], coeffs))
         obs = OBS
         v = gen_noise(obs)
         y = arma(p, q, teta, obs, v)
     elif folder == 'file':
         current_directory = os.path.dirname(os.path.abspath(__file__))
-        teta, v, y = read_file(os.path.join(current_directory, DATA_FOLDER))
+        v, y = read_file(os.path.join(current_directory, DATA_FOLDER))
         obs = min([len(v), len(y)])
     else:
         raise ValueError("MODE має бути 'auto' або 'file'")
