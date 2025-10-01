@@ -157,56 +157,91 @@ def main():
     print(f"МНК: {best_ls['Модель']} (AIC={best_ls['МНК_AIC']:.2f})")
     print(f"РМНК: {best_rls['Модель']} (AIC={best_rls['РМНК_AIC']:.2f})")
 
-    # Побудова графіків збіжності параметрів РМНК
-    fig, axes = plt.subplots(3,3,figsize=(15,12))
-    fig.suptitle('Збіжність параметрів РМНК для різних моделей', fontsize=16)
-    for idx, result in enumerate(results):
-        ax = axes[idx//3, idx%3]
-        history = result['theta_history']
-        for i in range(history.shape[1]):
-            ax.plot(history[:,i], label=f'θ{i}', alpha=0.7)
-        ax.set_title(result['Модель'])
-        ax.set_xlabel('Крок k')
-        ax.set_ylabel('Значення параметра')
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(os.path.join(result_dir,'convergence_plots.png'), dpi=150)
-    print(f"Збережено: {os.path.join(result_dir,'convergence_plots.png')}")
+    # Побудова графіків для кожного коєфіцієнта
 
-    # Графіки порівняння метрик
-    fig, axes = plt.subplots(1,3,figsize=(15,5))
+    p, q = 3, 3
+    model_name = f"АРКС({p},{q})"
+
+    # Оцінювання параметрів для АРКС(3,3)
+    theta_ls = least_squares(y, v, p, q)
+    theta_rls, theta_history = recursive_least_squares(y, v, p, q)
+
+    param_names = ['a0'] + [f'a{i}' for i in range(1, p + 1)] + [f'b{j}' for j in range(1, q + 1)]
+    true_theta = [true_params[name] for name in param_names]
+    k_range = np.arange(theta_history.shape[0]) + max(p, q)
+
+    # Папка для збереження
+    coeff_dir = os.path.join(result_dir, 'coeff_plots_ARX_3_3')
+    os.makedirs(coeff_dir, exist_ok=True)
+
+    # Побудова
+    for i, name in enumerate(param_names):
+        plt.figure(figsize=(10, 3))
+
+        plt.plot(k_range, theta_history[:, i], color='green', label='РМНК')
+        plt.hlines(theta_ls[i], k_range[0], k_range[-1], color='red', linestyle='--', label='МНК')
+        plt.hlines(true_theta[i], k_range[0], k_range[-1], color='black', linestyle='-', label='Реальне')
+
+        plt.xlabel("Дискретний час $k$")
+        plt.ylabel("Значення")
+        plt.title(f"Коефіцієнт {name}")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+
+        filename = os.path.join(coeff_dir, f"coef_{name}_ARX_3_3.png")
+        plt.tight_layout()
+        plt.savefig(filename, dpi=150)
+        print(f"Збережено: {filename}")
+        plt.close()
+
+
+    # Підготуємо мітки моделей
     models = df['Модель'].values
+
+    # Папка для збереження
+    metrics_dir = os.path.join(result_dir, 'metrics_plots')
+    os.makedirs(metrics_dir, exist_ok=True)
+
     x = np.arange(len(models))
-    width = 0.35
 
-    axes[0].bar(x-width/2, df['МНК_SSE'], width, label='МНК', alpha=0.8)
-    axes[0].bar(x+width/2, df['РМНК_SSE'], width, label='РМНК', alpha=0.8)
-    axes[0].set_title('SSE')
-    axes[0].set_xticks(x)
-    axes[0].set_xticklabels(models, rotation=45)
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
-
-    axes[1].bar(x-width/2, df['МНК_R2'], width, label='МНК', alpha=0.8)
-    axes[1].bar(x+width/2, df['РМНК_R2'], width, label='РМНК', alpha=0.8)
-    axes[1].set_title('R²')
-    axes[1].set_xticks(x)
-    axes[1].set_xticklabels(models, rotation=45)
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3)
-
-    axes[2].bar(x-width/2, df['МНК_AIC'], width, label='МНК', alpha=0.8)
-    axes[2].bar(x+width/2, df['РМНК_AIC'], width, label='РМНК', alpha=0.8)
-    axes[2].set_title('AIC')
-    axes[2].set_xticks(x)
-    axes[2].set_xticklabels(models, rotation=45)
-    axes[2].legend()
-    axes[2].grid(True, alpha=0.3)
-
+    # SSE
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, df['РМНК_SSE'], 'go-', label='S отримане за РМНК')
+    plt.plot(x, df['МНК_SSE'], 'r^--', label='S отримане за МНК')
+    plt.xticks(x, models, rotation=45)
+    plt.ylabel("S (сума квадратів похибок)")
+    plt.title("Зміна суми квадратів похибок для моделей АРКС(p,q)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(result_dir,'metrics_comparison.png'), dpi=150)
-    print(f"Збережено: {os.path.join(result_dir,'metrics_comparison.png')}")
+    plt.savefig(os.path.join(metrics_dir, 'sse_vs_model.png'), dpi=150)
+    plt.close()
+
+    # R^2
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, df['РМНК_R2'], 'go-', label='R² отримане за РМНК')
+    plt.plot(x, df['МНК_R2'], 'r^--', label='R² отримане за МНК')
+    plt.xticks(x, models, rotation=45)
+    plt.ylabel("Коефіцієнт детермінації R²")
+    plt.title("Зміна R² для моделей АРКС(p,q)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(metrics_dir, 'r2_vs_model.png'), dpi=150)
+    plt.close()
+
+    # AIC
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, df['РМНК_AIC'], 'go-', label='AIC отримане за РМНК')
+    plt.plot(x, df['МНК_AIC'], 'r^--', label='AIC отримане за МНК')
+    plt.xticks(x, models, rotation=45)
+    plt.ylabel("Критерій Акайке (AIC)")
+    plt.title("Зміна AIC для моделей АРКС(p,q)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(metrics_dir, 'aic_vs_model.png'), dpi=150)
+    plt.close()
 
     # Збереження результатів у CSV
     df[['Модель','МНК_SSE','МНК_R2','МНК_AIC','РМНК_SSE','РМНК_R2','РМНК_AIC']].to_csv(os.path.join(result_dir,'results.csv'), index=False)
