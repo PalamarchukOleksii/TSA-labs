@@ -123,50 +123,80 @@ def main():
     best_rls = df.loc[df['RLS_AIC'].idxmin()]
     print(f"\nBest Models by AIC:\nLS: {best_ls['Model']} (AIC={best_ls['LS_AIC']:.2f})\nRLS: {best_rls['Model']} (AIC={best_rls['RLS_AIC']:.2f})")
 
-    fig, axes = plt.subplots(3,3,figsize=(15,12))
-    fig.suptitle('RLS Parameter Convergence', fontsize=16)
-    for idx, result in enumerate(results):
-        ax = axes[idx//3, idx%3]
-        history = result['theta_history']
-        for i in range(history.shape[1]):
-            ax.plot(history[:,i], label=f'θ{i}', alpha=0.7)
-        ax.set_title(result['Model'])
-        ax.set_xlabel('Step k')
-        ax.set_ylabel('Value')
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(os.path.join(result_dir,'convergence_plots.png'), dpi=150)
+    p, q = 3, 3
+    model_name = f"ARX({p},{q})"
 
-    fig, axes = plt.subplots(1,3,figsize=(15,5))
+    theta_ls = least_squares(y, v, p, q)
+    theta_rls, theta_history = recursive_least_squares(y, v, p, q)
+
+    param_names = ['a0'] + [f'a{i}' for i in range(1, p + 1)] + [f'b{j}' for j in range(1, q + 1)]
+    true_theta = [true_params[name] for name in param_names]
+    k_range = np.arange(theta_history.shape[0]) + max(p, q)
+
+    coeff_dir = os.path.join(result_dir, 'coeff_plots_ARX_3_3')
+    os.makedirs(coeff_dir, exist_ok=True)
+
+    for i, name in enumerate(param_names):
+        plt.figure(figsize=(10, 3))
+
+        plt.plot(k_range, theta_history[:, i], color='green', label='RLS')
+        plt.hlines(theta_ls[i], k_range[0], k_range[-1], color='red', linestyle='--', label='LS')
+        plt.hlines(true_theta[i], k_range[0], k_range[-1], color='black', linestyle='-', label='True')
+
+        plt.xlabel("Discrete time $k$")
+        plt.ylabel("Value")
+        plt.title(f"Coefficient {name}")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+
+        filename = os.path.join(coeff_dir, f"coef_{name}_ARX_3_3.png")
+        plt.tight_layout()
+        plt.savefig(filename, dpi=150)
+        print(f"Saved: {filename}")
+        plt.close()
+
     models = df['Model'].values
+
+    metrics_dir = os.path.join(result_dir, 'metrics_plots')
+    os.makedirs(metrics_dir, exist_ok=True)
+
     x = np.arange(len(models))
-    width = 0.35
-    
-    axes[0].bar(x-width/2, df['LS_SSE'], width, label='LS')
-    axes[0].bar(x+width/2, df['RLS_SSE'], width, label='RLS')
-    axes[0].set_title('SSE'); axes[0].set_xticks(x)
-    axes[0].set_xticklabels(models, rotation=45)
-    axes[0].legend()
-    axes[0].grid(True, alpha=0.3)
 
-    axes[1].bar(x-width/2, df['LS_R2'], width, label='LS')
-    axes[1].bar(x+width/2, df['RLS_R2'], width, label='RLS')
-    axes[1].set_title('R²'); axes[1].set_xticks(x)
-    axes[1].set_xticklabels(models, rotation=45)
-    axes[1].legend()
-    axes[1].grid(True, alpha=0.3)
-
-    axes[2].bar(x-width/2, df['LS_AIC'], width, label='LS')
-    axes[2].bar(x+width/2, df['RLS_AIC'], width, label='RLS')
-    axes[2].set_title('AIC')
-    axes[2].set_xticks(x)
-    axes[2].set_xticklabels(models, rotation=45)
-    axes[2].legend()
-    axes[2].grid(True, alpha=0.3)
-
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, df['RLS_SSE'], 'go-', label='S obtained by RLS')
+    plt.plot(x, df['LS_SSE'], 'r^--', label='S obtained by LS')
+    plt.xticks(x, models, rotation=45)
+    plt.ylabel("S (sum of squared errors)")
+    plt.title("Change of sum of squared errors for ARX(p,q) models")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(result_dir,'metrics_comparison.png'), dpi=150)
+    plt.savefig(os.path.join(metrics_dir, 'sse_vs_model.png'), dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, df['RLS_R2'], 'go-', label='R² obtained by RLS')
+    plt.plot(x, df['LS_R2'], 'r^--', label='R² obtained by LS')
+    plt.xticks(x, models, rotation=45)
+    plt.ylabel("Coefficient of determination R²")
+    plt.title("Change of R² for ARX(p,q) models")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(metrics_dir, 'r2_vs_model.png'), dpi=150)
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(x, df['RLS_AIC'], 'go-', label='AIC obtained by RLS')
+    plt.plot(x, df['LS_AIC'], 'r^--', label='AIC obtained by LS')
+    plt.xticks(x, models, rotation=45)
+    plt.ylabel("Akaike Information Criterion (AIC)")
+    plt.title("Change of AIC for ARX(p,q) models")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(metrics_dir, 'aic_vs_model.png'), dpi=150)
+    plt.close()
 
     df[['Model','LS_SSE','LS_R2','LS_AIC','RLS_SSE','RLS_R2','RLS_AIC']].to_csv(os.path.join(result_dir,'results.csv'), index=False)
 
