@@ -250,6 +250,116 @@ def process_file(filename: str, window_size: int) -> None:
         os.path.join(results_dir, f"{base_name}_correlations.png"),
     )
 
+def plot_index_with_sma(y: np.ndarray, window_size: int, filename: str, save_path: str = None) -> None:
+    """
+    Побудова графіка індексу (наприклад, rts1) і простого ковзного середнього (SMA)
+    у стилі, як на прикладі з методички.
+    """
+    # Розрахунок простого КС
+    sma = simple_ma(y, window_size)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(y, color="black", linewidth=1.5, label="Index")
+    plt.plot(sma, color="magenta", linestyle="--", linewidth=2, label="SMA")
+
+    plt.xlabel("time", fontsize=11, fontweight="bold")
+    plt.ylabel("value", fontsize=11, fontweight="bold")
+    plt.legend()
+    plt.grid(False)
+    plt.box(True)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"Saved: {save_path}")
+    else:
+        plt.show()
+
+def calculate_ema_weights(alpha: float, n_weights: int) -> np.ndarray:
+    """
+    Calculate EMA weights for given alpha and number of weights
+    """
+    weights = np.zeros(n_weights)
+    for t in range(n_weights):
+        weights[t] = alpha * (1 - alpha) ** t
+    return weights
+
+def print_ema_weights_table(alpha1: float = 0.2, alpha2: float = 0.05, n_weights: int = 12):
+    """
+    Print table of EMA weights for two different alpha values
+    """
+    weights1 = calculate_ema_weights(alpha1, n_weights)
+    weights2 = calculate_ema_weights(alpha2, n_weights)
+    
+    print("\n" + "="*60)
+    print("ТАБЛИЦЯ ВАГОВИХ КОЕФІЦІЄНТІВ EMA")
+    print("="*60)
+    print(f"{'Ваговий коефіцієнт':<20} {'α='+str(alpha1):<15} {'α='+str(alpha2):<15}")
+    print("-"*50)
+    
+    for i in range(n_weights):
+        w1 = weights1[i]
+        w2 = weights2[i]
+        print(f"{'w_'+str(i+1) if i >= 9 else '':<20} {w1:<15.8f} {w2:<15.8f}")
+
+def plot_ema_weights(alpha1: float = 0.2, alpha2: float = 0.05, n_weights: int = 12, save_path: str = None):
+    """
+    Plot EMA weights dependence on time for different alpha values
+    """
+    weights1 = calculate_ema_weights(alpha1, n_weights)
+    weights2 = calculate_ema_weights(alpha2, n_weights)
+    time_points = np.arange(1, n_weights + 1)
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(time_points, weights1, 'o-', linewidth=2, markersize=6, label=f'α={alpha1}', color='blue')
+    plt.plot(time_points, weights2, 's-', linewidth=2, markersize=6, label=f'α={alpha2}', color='red')
+    
+    plt.title('Залежність вагових коефіцієнтів EMA від t для α = 0.2 та α = 0.05', fontsize=14, fontweight='bold', pad=20)
+    plt.xlabel('t', fontsize=12)
+    plt.ylabel('Вагові коефіцієнти EMA', fontsize=12)
+    plt.xticks(time_points)
+    plt.ylim(0, 0.21)
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=12)
+    
+    # Додати значення на графік
+    for i, (t, w1, w2) in enumerate(zip(time_points, weights1, weights2)):
+        if i % 2 == 0:  # Додаємо підписи тільки для кожного другого значення
+            plt.annotate(f'{w1:.3f}', (t, w1), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
+            plt.annotate(f'{w2:.3f}', (t, w2), textcoords="offset points", xytext=(0,-15), ha='center', fontsize=8)
+    
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"EMA weights plot saved to: {save_path}")
+    else:
+        plt.show()
+
+def analyze_ema_weights():
+    """
+    Main function for EMA weights analysis
+    """
+    print("\n" + "="*60)
+    print("АНАЛІЗ ВАГОВИХ КОЕФІЦІЄНТІВ EMA")
+    print("="*60)
+    
+    # Розрахунок та вивід таблиці
+    print_ema_weights_table()
+    
+    # Побудова графіка
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    results_dir = os.path.join(base_dir, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    
+    plot_path = os.path.join(results_dir, "ema_weights_plot.png")
+    plot_ema_weights(save_path=plot_path)
+    
+    # Додатковий аналіз
+    weights_02 = calculate_ema_weights(0.2, 12)
+    weights_005 = calculate_ema_weights(0.05, 12)
+    
+    print(f"\nСума вагів для α=0.2: {np.sum(weights_02):.6f}")
+    print(f"Сума вагів для α=0.05: {np.sum(weights_005):.6f}")
+    print(f"Теоретична сума вагів: 1.000000")
 
 def main() -> None:
     print("\n" + "=" * 60)
@@ -267,6 +377,9 @@ def main() -> None:
     b1 = 0.5
     b2 = 0.25
     b3 = 0.25
+    
+    print("\n--- PART 3: EMA Weights Analysis ---")
+    analyze_ema_weights()
 
     print("\n--- PART 1: Synthetic ARMA(3,3) Series Generation ---")
     print(f"Model: y(k) = {a0} + {a1}*y(k-1) + {a2}*y(k-2) + {a3}*y(k-3)")
@@ -279,6 +392,13 @@ def main() -> None:
 
     y = generate_series_y(v, a0, a1, a2, a3, b1, b2, b3)
     print(f"Generated ARMA series y(k): mean={np.mean(y):.4f}, std={np.std(y):.4f}")
+    
+    # Побудова графіка у стилі завдання (Index + SMA)
+    plot_index_with_sma(
+    y[:50], 5, "rts1",
+    save_path=os.path.join(results_dir, "rts1_SMA_plot.png")
+    )
+
 
     output_path = os.path.join(results_dir, "v_y_plot.png")
     plot_series(v, y, save_path=output_path)
