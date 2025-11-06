@@ -198,7 +198,8 @@ class InputReceiver:
 
         # Наш target згідно варіанту №9 - RTStl.txt
         target_file = "RTStl.txt"
-        target = pd.read_csv(dir + target_file, header=None, squeeze=True)
+        target = pd.read_csv(dir + target_file, header=None)
+        target = target.iloc[:, 0]  # Отримуємо перший стовпець як Series
 
         # Регресори (екзогенні індекси, включаючи target, для кореляційної матриці)
         pathes = [
@@ -215,7 +216,8 @@ class InputReceiver:
         for path in pathes:
             try:
                 # Читання даних, припускаючи, що це один стовпець без заголовка
-                data = pd.read_csv(dir + path, header=None, squeeze=True)
+                data = pd.read_csv(dir + path, header=None)
+                data = data.iloc[:, 0]  # Отримуємо перший стовпець як Series
                 indexes[path.partition(".")[0]] = data
             except FileNotFoundError:
                 print(
@@ -600,9 +602,9 @@ def resid_approach(series, p, w_size, dummy=[]):
     ema_pred = generate_arma(v=v, p=p, q=q, coeffs=ARMA_ema_coefs, N=N)
 
     # Обрізка для порівняння зі series
-    series_eff = series.values[max_lag:]
-    sma_pred_eff = sma_pred[max_lag:]
-    ema_pred_eff = ema_pred[max_lag:]
+    series_eff = series.values[MAX_LAG:]
+    sma_pred_eff = sma_pred[MAX_LAG:]
+    ema_pred_eff = ema_pred[MAX_LAG:]
 
     sma_res = {
         "y_true": series_eff,
@@ -651,6 +653,14 @@ def original_series_approach(series, p, w_size, ma=sma, dummy=[]):
     m = max([p, q])
     v = np.random.randn(N_orig)  # Білий шум
 
+    # Синхронізація довжин: ma_series може бути коротшою за series через dropna()
+    # Обрізаємо series до довжини ma_series
+    min_len = min(len(series), len(ma_series))
+    series = series[:min_len]
+    ma_series = ma_series[:min_len]
+    N_orig = min_len
+    v = np.random.randn(N_orig)
+
     # Оскільки y_eff = y[m:] та ma_series_eff = ma_series[m:]
     # Тоді довжина ефективної вибірки: N_eff = N_orig - m
 
@@ -678,30 +688,24 @@ def original_series_approach(series, p, w_size, ma=sma, dummy=[]):
     else:
         ma_coefs = [0] * q
 
-    # Модель для AR частини: yl(k) = a0 + a1*y(k-1) + ... + ap*y(k-p)
-    # yl(k) = y(k) - mv(k) - sum(b_j * mv(k-j))
-
-    # MA частина: sum(b_j * mv(k-j))
-    X_ma_part = X_matrix(y=[], v=ma_series, p=0, q=q)  # [1, mv(k-1)...mv(k-q)]
-    # MA частина: b1*mv(k-1) + ... + bq*mv(k-q)
-    # ma_part_values: [mv(k-1), ..., mv(k-q)] * [b1, ..., bq]
-
-    # Проекція на MV лаги: X_ma_part[:, 1:] - це матриця лагів mv(k-1)...mv(k-q)
-    # ma_part_values - це вектор: sum(b_j * mv(k-j)) для кожного t
-    ma_part_values = np.sum(
-        [b_j * X_ma_part[:, i] for i, b_j in enumerate(ma_coefs, 1)], axis=0
-    )
+    # Потрібно обчислити sum(b_j * mv(k-j)) для кожного k від m до N_orig
+    # ma_series_eff містить значення ma_series[m:], тобто ma_series[m], ..., ma_series[N_orig-1]
+    ma_part_values = np.zeros(N_eff)
+    for k in range(N_eff):
+        ma_sum = 0
+        for j in range(1, q + 1):
+            if m + k - j >= 0:
+                ma_sum += ma_coefs[j - 1] * ma_series.values[m + k - j]
+        ma_part_values[k] = ma_sum
 
     # yl(k) = y(k) - mv(k) - sum(b_j * mv(k-j))
-    # Обрізка y та mv до ефективного діапазону (N_eff)
-    # yl_eff = series_eff - ma_series_eff - ma_part_values
-
-    # Використовуємо спрощену форму з методички:
-    # yl(k) = y(k) - mv(k) - sum(b_j * mv(k-j))
-    y_to_predict = series.values[m:] - ma_series.values[m:] - ma_part_values
+    y_to_predict = series_eff - ma_series_eff - ma_part_values
 
     # Регресори AR: c, y(k-1)...y(k-p)
-    X_ar_part = X_matrix(y=series, v=[], p=p, q=0)
+    # Потрібно врахувати, що series[m:] має довжину N_eff
+    X_ar_part = np.ones((N_eff, p + 1))
+    for i in range(1, p + 1):
+        X_ar_part[:, i] = series.values[m - i : N_orig - i]
 
     # Оцінка AR коефіцієнтів a0..ap
     ar_coefs = LS(y=y_to_predict, X=X_ar_part)
@@ -736,10 +740,18 @@ def original_series_approach(series, p, w_size, ma=sma, dummy=[]):
     # Модель для LS: yl(k) = a0 + a1*y(k-1) + ... + ap*y(k-p) + b1*mv(k-1) + ... + bq*mv(k-q)
     # yl(k) = y(k) - mv(k)
 
-    y_to_predict_smlt = series.values[m:] - ma_series.values[m:]
+    y_to_predict_smlt = series_eff - ma_series_eff
 
-    # X_matrix: c, y(k-1)..y(k-p), mv(k-1)..mv(k-q)
-    X_smlt = X_matrix(y=series, v=ma_series, p=p, q=q)
+    # X_smlt: c, y(k-1)..y(k-p), mv(k-1)..mv(k-q)
+    X_smlt = np.ones((N_eff, p + q + 1))
+
+    # AR частина: y(k-1)...y(k-p)
+    for i in range(1, p + 1):
+        X_smlt[:, i] = series.values[m - i : N_orig - i]
+
+    # MA частина: mv(k-1)...mv(k-q)
+    for i in range(1, q + 1):
+        X_smlt[:, p + i] = ma_series.values[m - i : N_orig - i]
 
     # Оцінка коефіцієнтів [a0, a1..ap, b1..bq]
     smlt_coefs = LS(y=y_to_predict_smlt, X=X_smlt)
