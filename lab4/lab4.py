@@ -137,15 +137,12 @@ def build_arima_model(y, order=(1, 1, 1)):
     """ARIMA(p,d,q) model - simplified version"""
     p, d, q = order
 
-    # Differencing
     diff_y = y.copy()
     for _ in range(d):
         diff_y = np.diff(diff_y)
 
-    # Build AR(p) + MA(q) model for differenced series
     n = len(diff_y)
 
-    # Lag matrix for AR
     X = np.ones((n - max(p, q), 1))
     for i in range(1, p + 1):
         X = np.column_stack([X, diff_y[max(p, q) - i : -i if i > 0 else None]])
@@ -364,7 +361,6 @@ def process_arima_model(y_train, dataset_name):
     model = build_arima_model(y_train, order=config)
     print_model_summary(model, dataset_name, f"ARIMA{config}")
 
-    # Plot residuals
     model_dir = f"results/{dataset_name}/arima_model_p4_d1_q4"
     create_dir(model_dir)
     plot_residuals(
@@ -373,7 +369,6 @@ def process_arima_model(y_train, dataset_name):
         f"{model_dir}/residuals.png",
     )
 
-    # Plot differenced series
     plt.figure(figsize=(12, 6))
     t = np.arange(1, len(model["diff_y"]) + 1)
     plt.plot(t, model["diff_y"], "b-", linewidth=2)
@@ -545,19 +540,16 @@ def forecast_arima_static(model, config, y_train, y_test, dataset_name):
     """Static one-step ahead forecast for ARIMA"""
     p, d, q = config
 
-    # Rebuild model on full training set
     y_full = np.concatenate([y_train, y_test])
 
     forecasts = []
     for i in range(len(y_test)):
         train_part = y_full[: len(y_train) + i]
 
-        # Differencing
         diff_y = train_part.copy()
         for _ in range(d):
             diff_y = np.diff(diff_y)
 
-        # AR part
         X = np.ones((len(diff_y) - max(p, q), 1))
         for j in range(1, p + 1):
             X = np.column_stack([X, diff_y[max(p, q) - j : -j if j > 0 else None]])
@@ -565,14 +557,12 @@ def forecast_arima_static(model, config, y_train, y_test, dataset_name):
         y_ar = diff_y[max(p, q) :]
         coeffs = np.linalg.lstsq(X, y_ar, rcond=None)[0]
 
-        # Predict next value in differenced space
         last_vals = np.concatenate([[1], diff_y[-p:] if p > 0 else []])
         pred_diff = np.dot(
             last_vals[: min(len(coeffs), len(last_vals))],
             coeffs[: min(len(coeffs), len(last_vals))],
         )
 
-        # Integrate back
         pred = train_part[-1] + pred_diff
         forecasts.append(pred)
 
@@ -603,12 +593,10 @@ def forecast_arima_dynamic(model, config, y_train, y_test, dataset_name):
     for i in range(len(y_test)):
         train_part = np.concatenate([y_train, forecasts])
 
-        # Differencing
         diff_y = train_part.copy()
         for _ in range(d):
             diff_y = np.diff(diff_y)
 
-        # AR part
         X = np.ones((len(diff_y) - max(p, q), 1))
         for j in range(1, p + 1):
             X = np.column_stack([X, diff_y[max(p, q) - j : -j if j > 0 else None]])
@@ -616,7 +604,6 @@ def forecast_arima_dynamic(model, config, y_train, y_test, dataset_name):
         y_ar = diff_y[max(p, q) :]
         coeffs = np.linalg.lstsq(X, y_ar, rcond=None)[0]
 
-        # Predict
         last_vals = np.concatenate([[1], diff_y[-p:] if p > 0 else []])
         pred_diff = np.dot(
             last_vals[: min(len(coeffs), len(last_vals))],
@@ -673,7 +660,6 @@ if __name__ == "__main__":
         y_test = y[train_size:]
         k_train = np.arange(1, len(y_train) + 1)
 
-        # Trend models
         print(f"\n--- TREND MODELS ---")
         best_trend = process_trend_models(y_train, k_train, dataset_name)
         print(
@@ -689,7 +675,6 @@ if __name__ == "__main__":
         print(f"\n--- ARIMA(4,1,4) MODEL ---")
         best_arima, best_config = process_arima_model(y_train, dataset_name)
 
-        # Generate forecasts
         print(f"\n--- FORECASTS ---")
         trend_rmse = forecast_trend(best_trend, y_train, y_test, dataset_name)
         print(f"Trend forecast RMSE: {trend_rmse:.8f}")
